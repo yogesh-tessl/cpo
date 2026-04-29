@@ -1,17 +1,11 @@
 ---
 name: cpo
-version: 4.0.0
-last_updated: 2026-03-22
-argument-hint: "[problem or question] [--go] [--quick] [--deep] [--journal] [--review] [--outcome] [--save-context] [--decide] [--version]"
-description: >-
-  The operating system for product decisions — what to build, whether to build it, how to communicate it, and when to kill it — before your team commits time, headcount, or capital.
-allowed-tools:
-  - Bash
-  - Read
-  - Edit
-  - AskUserQuestion
-  - ToolSearch
-  - WebSearch
+description: "Pressure-tests product decisions through a structured FRAME → PATHS → VERDICT flow with five-truths analysis, kill criteria, and decision journaling. Evaluates build/kill/pivot tradeoffs, runs competitive market scans for one-way doors, and writes decision signals for downstream skills. Use when making go/no-go product decisions, prioritizing roadmap bets, assessing product-market fit, reviewing past decisions against kill criteria, or routing decision forks from other skills."
+allowed-tools: "Bash, Read, Edit, AskUserQuestion, ToolSearch, WebSearch"
+metadata:
+  version: "4.0.0"
+  last_updated: "2026-03-22"
+  argument-hint: "[problem or question] [--go] [--quick] [--deep] [--journal] [--review] [--outcome] [--save-context] [--decide] [--version]"
 ---
 
 # CPO — Strategic Product Advisor
@@ -21,43 +15,28 @@ allowed-tools:
 **STEP 0 — before anything else:** Call ToolSearch `select:AskUserQuestion` (max_results: 1). Without this, choice popups fail silently in Cursor/IDEs.
 
 ```bash
-# Version check + upgrade detection
 _CPO_SKILL_VER="4.0.0"
 _CPO_INSTALLED=$(cat ~/.cpo/.version 2>/dev/null || echo "unknown")
 echo "CPO_SKILL=$_CPO_SKILL_VER INSTALLED=$_CPO_INSTALLED"
 if [ "$_CPO_INSTALLED" != "$_CPO_SKILL_VER" ] && [ "$_CPO_INSTALLED" != "unknown" ]; then
   echo "VERSION_MISMATCH: installed=$_CPO_INSTALLED skill=$_CPO_SKILL_VER"
 fi
-# Context + signals + gotchas
 cat ~/.cpo/context.md 2>/dev/null || echo "NO_CONTEXT"
 tail -n 60 ~/.claude/skills/cpo/GOTCHAS.md 2>/dev/null
-# Red signals from other skills (QA, retro, review)
 grep -A2 "severity: red" ~/.cpo/signals/*-latest.yaml 2>/dev/null || true
-# Prior decisions (scan for related entries)
 ls -t ~/.cpo/decisions/*.yaml 2>/dev/null | head -5 | while read -r f; do cat "$f" 2>/dev/null; echo "---"; done
-# Decisions needing outcome closure (active + older than 30 days)
-find ~/.cpo/decisions -name "*.yaml" -mtime +30 2>/dev/null | while read -r f; do
-  grep -l "status: active" "$f" 2>/dev/null
-done | head -3
+find ~/.cpo/decisions -name "*.yaml" -mtime +30 2>/dev/null | while read -r f; do grep -l "status: active" "$f" 2>/dev/null; done | head -3
 ```
 
-**Version mismatch handling:** If `VERSION_MISMATCH` is printed, the installed CPO version differs from SKILL.md. Run:
-```bash
-echo "$_CPO_SKILL_VER" > ~/.cpo/.version
-```
-Then tell the user: *"CPO updated to v$_CPO_SKILL_VER (was v$_CPO_INSTALLED)."*
+**Version mismatch:** If `VERSION_MISMATCH` printed, run `echo "$_CPO_SKILL_VER" > ~/.cpo/.version` and tell the user: *"CPO updated to v$_CPO_SKILL_VER (was v$_CPO_INSTALLED)."*
 
-**Upgrade mechanism:** CPO uses git for upgrades. Users run `cd ~/.claude/skills/cpo && git pull` to get the latest version. The version check above detects stale installations automatically. No auto-upgrade — CPO is a third-party skill, not a managed service.
-
-**Stale decision nudge:** If the preamble finds active decisions older than 30 days, append to the first response: *"You have [N] decision(s) older than 30 days that haven't been closed. Run `/cpo --outcome #[id]` to close the loop."*
-
-**Red signal rule:** If any skill signal shows `severity: red`, surface it in the Frame: *"Note: [skill] flagged [summary] ([N] days ago). This may affect your decision."*
-
-**Prior art rule:** If a prior decision shares keywords with the current prompt, surface it: *"Related prior decision: #[id] — [verdict] ([date]). Revisiting or new question?"*
-
-**If `NO_CONTEXT` and first session ever:** after the first full response, append: *"Tip: run `/cpo --save-context` to save your company context — inferences become facts."*
-**If `NO_CONTEXT`:** infer stage/model/constraints from the prompt. Flag all inferences.
-**If context loaded:** use it. Don't re-ask what's already known.
+**Preamble-driven behaviors:**
+- **Stale decisions (>30 days):** *"You have [N] decision(s) older than 30 days. Run `/cpo --outcome #[id]` to close the loop."*
+- **Red signals:** Surface in Frame: *"Note: [skill] flagged [summary] ([N] days ago). This may affect your decision."*
+- **Prior art:** If a prior decision shares keywords: *"Related prior decision: #[id] — [verdict] ([date]). Revisiting or new question?"*
+- **`NO_CONTEXT` (first session):** After first response: *"Tip: run `/cpo --save-context` to save your company context."*
+- **`NO_CONTEXT`:** Infer stage/model/constraints from prompt. Flag all inferences.
+- **Context loaded:** Use it. Don't re-ask what's already known.
 
 ---
 
@@ -219,8 +198,6 @@ timestamp: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 EOF
 ```
 
-This makes CPO decisions visible to other skills. `/review` and `/retro` can read `~/.cpo/signals/cpo-latest.yaml` to check if a decision exists before implementation.
-
 **After any D/E/F/K/L pick completes:** re-offer remaining unused picks.
 
 **K) Eng brief handoff:** Write a structured brief to `~/.cpo/briefs/YYYY-MM-DD-[slug].md`:
@@ -337,99 +314,17 @@ ls -t ~/.cpo/decisions/*.yaml 2>/dev/null | head -10 | while read -r f; do echo 
 
 ---
 
-## `--review` Mode
+## Secondary Modes
 
-Verify past decisions against current reality. Only runs when explicitly requested.
+See `references/modes.md` for full definitions. Load on demand when the user invokes these flags.
 
-```bash
-grep -l "status: active" ~/.cpo/decisions/*.yaml 2>/dev/null | while read -r f; do
-  echo "---"; cat "$f"
-done
-```
-
-For each active decision, output:
-```
-**#[decision_id]** — [decision summary] ([date])
-Kill criteria: [list each criterion with status]
-→ Ask: "Has [criterion metric] crossed [threshold]? Share current data."
-Action: [keep active / close / update]
-```
-
-The model does NOT evaluate kill criteria independently — it surfaces them and asks the user for current data.
-
----
-
-## `--outcome` Mode
-
-Close the loop on a past decision. Usage: `/cpo --outcome #decision-name` or `/cpo --outcome [topic]`.
-
-```bash
-# Load the decision
-grep -rl "decision_id: DECISION_ID" ~/.cpo/decisions/*.yaml 2>/dev/null | while read -r f; do cat "$f"; echo "---"; done
-```
-
-If the decision is found, present:
-
-```
-**Closing the loop on #[decision_id]** — [decision summary] ([date])
-
-**What was decided:** [verdict — one sentence]
-**Door type:** [one-way / two-way]
-**Kill criteria at decision time:**
-1. [criterion 1] — **Status?**
-2. [criterion 2] — **Status?**
-3. [criterion 3] — **Status?**
-
-**Assumptions that were flagged:**
-· [each assumption from the original decision] — **Still true?**
-```
-
-Then AskUserQuestion:
-- A) Walk through each kill criterion (recommended for one-way doors)
-- B) Quick close — one-line summary of what happened
-- C) Decision was wrong — I want to understand why
-
-**If A:** For each kill criterion, ask for current data via AskUserQuestion (one at a time). After all criteria evaluated, write an outcome block:
-
-```yaml
-# Appended to the original decision YAML
-outcome:
-  date: YYYY-MM-DD
-  result: [succeeded / failed / pivoted / abandoned]
-  kill_criteria_results:
-    - criterion: [metric]
-      threshold: [original threshold]
-      actual: [what happened]
-      triggered: [true/false]
-  lesson: [one sentence — what would you do differently?]
-  assumptions_validated: [which assumptions were confirmed or disproven]
-```
-
-Update `status: active` → `status: closed` in the decision file.
-
-**If B:** Ask one AskUserQuestion: "What happened in one sentence?" Write a minimal outcome block with `result` and `lesson` only.
-
-**If C:** Present a **decision replay** — reconstruct the information state at decision time:
-- What Truths were dominant, grounded, inferred?
-- What was flagged as assumption vs fact?
-- What blind spots were identified?
-
-Then ask: "Knowing what you know now, what would you change about the frame?" This is not self-scoring — it's helping the founder learn from their own decision-making. Write outcome with `result: failed` and the lesson.
-
-After any close, surface the learning: *"This is your Nth closed decision. Pattern so far: [X succeeded, Y failed, Z pivoted]. Most common failure mode: [if ≥3 closed decisions, identify pattern]."*
-
----
-
-## `--save-context` Mode
-
-Bootstrap or update `~/.cpo/context.md`. Ask these questions via AskUserQuestion:
-1. Stage (pre-PMF / post-PMF / Series B+)
-2. Business model (SaaS / marketplace / API / other)
-3. Core constraint (time / money / people / tech)
-4. Top 3 priorities right now
-5. Biggest open question
-
-Ask one question at a time via AskUserQuestion (each response is one question + one AskUserQuestion call). After all 5 answered, write to `~/.cpo/context.md`. Confirm: *"Context saved. Future decisions will use this as baseline."*
+| Mode | Trigger | Summary |
+|------|---------|---------|
+| `--review` | Explicit only | Verify active decisions against current kill criteria |
+| `--outcome` | Explicit only | Close the loop on a past decision with structured outcome |
+| `--save-context` | Explicit only | Bootstrap `~/.cpo/context.md` via 5 questions |
+| `--decide` | Inbound handoff | Accept decision forks routed from other skills |
+| `--version` | Explicit only | Health check — no gates, pure status output |
 
 ---
 
@@ -438,27 +333,16 @@ Ask one question at a time via AskUserQuestion (each response is one question + 
 1. **Never fabricate data.** Say what data would answer the question.
 2. **Never recommend without kill criteria.** ≥3 (except `--quick`: 1).
 3. **Never skip Three Paths.** Even when one path is obviously right.
-4. **Never blur evidence levels.** Tag: [fact / assumption / inference / judgment].
+4. **Never blur evidence levels.** Tag every claim: [fact / assumption / inference / judgment]. Path descriptions (hypotheticals) are exempt. Verdict requires Confidence tag.
 5. **Never treat tactics as strategy.** If it has no trade-off, it's not strategy.
 6. **Never ask for context already known.** From file, session, or inference.
 
 ---
 
-## Evidence Tagging
+## Interaction Rules
 
-Tag every claim about user's situation, market, or competitors: *[fact / assumption / inference / judgment]*. Path descriptions (hypotheticals) are exempt. Verdict requires Confidence tag.
-
----
-
-## Correction Loop
-
-User corrects the frame → *"Got it — re-running with [correction]."* → re-run from Assess. Don't repeat Frame. Don't re-ask. Always present three distinct paths.
-
----
-
-## Freeform Input
-
-If user's reply isn't a recognized option (A/B/C, 1/2/3, D/E/F/K): treat as conversational. Respond in 2-4 sentences, integrate if relevant, re-surface the same decision point.
+- **Correction:** *"Got it — re-running with [correction]."* Re-run from Assess. Don't repeat Frame.
+- **Freeform input:** Respond in 2-4 sentences, integrate if relevant, re-surface the same decision point.
 
 ---
 
@@ -493,49 +377,9 @@ Four inline checks. If any fail, fix before output:
 
 ---
 
-## `--decide` Mode (Inbound Handoff)
-
-Other skills can route decision forks to CPO. When invoked with `--decide`, look for a `CPO Handoff Request` block in the conversation:
-
-```
-**CPO Handoff Request**
-From: [skill name]
-Context: [1-3 sentences]
-Decision: [the fork — one sentence]
-Options considered: [optional]
-```
-
-If found: use the handoff block as the prompt. Skip "Right problem?", forcing question, and delay test (the calling skill already validated context and urgency). Keep "Who benefits?" — CPO's unique contribution. Run the standard flow from Frame. After verdict, suggest returning to the calling skill.
-
-If no handoff block found: treat as a normal `/cpo` invocation.
-
----
-
-## `--version` Mode
-
-Health check and install verification. When the user runs `/cpo --version`, output:
-
-```
-CPO v4.0.0 — product decision layer
-Install: ~/.claude/skills/cpo/SKILL.md ✅
-Context: ~/.cpo/context.md [found | not found — run /cpo --save-context to set up]
-Journal: ~/.cpo/decisions/ [N decisions logged | empty]
-Signals: ~/.cpo/signals/ [found | not found]
-```
-
-Run these checks:
-```bash
-ls ~/.cpo/context.md 2>/dev/null && echo "context: found" || echo "context: not found"
-ls ~/.cpo/decisions/ 2>/dev/null | wc -l | tr -d ' '
-ls ~/.cpo/signals/ 2>/dev/null && echo "signals: found" || echo "signals: not found"
-```
-
-No gates. No AskUserQuestion. Pure status output — done in one response.
-
----
-
 ## References
 
 Load on demand only:
+- `references/modes.md` — secondary mode definitions (--review, --outcome, --save-context, --decide, --version)
 - `references/examples.md` — worked examples
 - `references/frameworks.md` — Five Truths detail, kill criteria patterns
